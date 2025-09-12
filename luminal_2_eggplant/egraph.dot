@@ -1,0 +1,192 @@
+digraph  {
+    compound=true
+    rank=same
+    fontname=helvetica
+    fontsize=9
+    margin=3
+    nodesep=0.05
+    ranksep=0.6
+    colorscheme=set312
+    edge[arrowsize=0.5]
+    node[shape=none,margin=0,fontname=helvetica]
+    outputorder=edgesfirst
+    graph[style="dashed,rounded,filled"]
+    fillcolor=2
+    "function-0-GMem":0:s -> "primitive-String-0" [lhead="cluster_String-0"]
+    subgraph "outer_cluster_Expr-0" {
+        subgraph "cluster_Expr-0" {
+            subgraph  {
+                "function-0-GMem"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="1">[0]GMem</td></tr><TR><TD PORT="0"></TD></TR></TABLE>>,tooltip="Expr-0: function-0-GMem"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-0-LOut":0:s -> "function-0-Max" [lhead="cluster_Expr-8"]
+    "function-0-LOut":1:s -> "function-0-Loop" [lhead="cluster_LoopType-9"]
+    "function-0-LOut":2:s -> "function-0-MAccum" [lhead="cluster_Math-6"]
+    subgraph "outer_cluster_Expr-10" {
+        subgraph "cluster_Expr-10" {
+            subgraph  {
+                "function-0-LOut"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="3">[10]LOut</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD><TD PORT="2"></TD></TR></TABLE>>,tooltip="Expr-10: function-0-LOut"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-0-Max":0:s -> "function-1-LIn" [lhead="cluster_Expr-5"]
+    "function-0-Max":1:s -> "function-0-LIn" [lhead="cluster_Expr-7"]
+    subgraph "outer_cluster_Expr-8" {
+        subgraph "cluster_Expr-8" {
+            subgraph  {
+                "function-0-Max"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="2">[8]Max</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD></TR></TABLE>>,tooltip="Expr-8: function-0-Max"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-1-LIn":0:s -> "function-0-GMem" [lhead="cluster_Expr-0"]
+    "function-1-LIn":1:s -> "function-1-Loop" [lhead="cluster_LoopType-3"]
+    "function-1-LIn":2:s -> "function-0-MVar" [lhead="cluster_Math-4"]
+    subgraph "outer_cluster_Expr-5" {
+        subgraph "cluster_Expr-5" {
+            subgraph  {
+                "function-1-LIn"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="3">[5]LIn</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD><TD PORT="2"></TD></TR></TABLE>>,tooltip="Expr-5: function-1-LIn"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-1-GMem":0:s -> "primitive-String-1" [lhead="cluster_String-1"]
+    subgraph "outer_cluster_Expr-1" {
+        subgraph "cluster_Expr-1" {
+            subgraph  {
+                "function-1-GMem"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="1">[1]GMem</td></tr><TR><TD PORT="0"></TD></TR></TABLE>>,tooltip="Expr-1: function-1-GMem"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-0-LIn":0:s -> "function-1-GMem" [lhead="cluster_Expr-1"]
+    "function-0-LIn":1:s -> "function-1-Loop" [lhead="cluster_LoopType-3"]
+    "function-0-LIn":2:s -> "function-0-MAccum" [lhead="cluster_Math-6"]
+    subgraph "outer_cluster_Expr-7" {
+        subgraph "cluster_Expr-7" {
+            subgraph  {
+                "function-0-LIn"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="3">[7]LIn</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD><TD PORT="2"></TD></TR></TABLE>>,tooltip="Expr-7: function-0-LIn"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    fillcolor=3
+    "function-0-Loop":0:s -> "primitive-String-4" [lhead="cluster_String-4"]
+    "function-0-Loop":1:s -> "function-0-MNum" [lhead="cluster_Math-2"]
+    subgraph "outer_cluster_LoopType-9" {
+        subgraph "cluster_LoopType-9" {
+            subgraph  {
+                "function-0-Loop"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="2">[9]Loop</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD></TR></TABLE>>,tooltip="LoopType-9: function-0-Loop"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-1-Loop":0:s -> "primitive-String-2" [lhead="cluster_String-2"]
+    "function-1-Loop":1:s -> "function-0-MNum" [lhead="cluster_Math-2"]
+    subgraph "outer_cluster_LoopType-3" {
+        subgraph "cluster_LoopType-3" {
+            subgraph  {
+                "function-1-Loop"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="2">[3]Loop</td></tr><TR><TD PORT="0"></TD><TD PORT="1"></TD></TR></TABLE>>,tooltip="LoopType-3: function-1-Loop"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    fillcolor=4
+    "function-0-MVar":0:s -> "primitive-String-3" [lhead="cluster_String-3"]
+    subgraph "outer_cluster_Math-4" {
+        subgraph "cluster_Math-4" {
+            subgraph  {
+                "function-0-MVar"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="1">[4]MVar</td></tr><TR><TD PORT="0"></TD></TR></TABLE>>,tooltip="Math-4: function-0-MVar"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    "function-0-MNum":0:s -> "primitive-i64-4" [lhead="cluster_i64-4"]
+    subgraph "outer_cluster_Math-2" {
+        subgraph "cluster_Math-2" {
+            subgraph  {
+                "function-0-MNum"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30" colspan="1">[2]MNum</td></tr><TR><TD PORT="0"></TD></TR></TABLE>>,tooltip="Math-2: function-0-MNum"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    subgraph "outer_cluster_Math-6" {
+        subgraph "cluster_Math-6" {
+            subgraph  {
+                "function-0-MAccum"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">[6]MAccum</td></tr></TABLE>>,tooltip="Math-6: function-0-MAccum"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    fillcolor=5
+    subgraph "outer_cluster_String-4" {
+        subgraph "cluster_String-4" {
+            subgraph  {
+                "primitive-String-4"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">Boxed(&quot;fold&quot;)</td></tr></TABLE>>,tooltip="String-4: primitive-String-4"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    subgraph "outer_cluster_String-0" {
+        subgraph "cluster_String-0" {
+            subgraph  {
+                "primitive-String-0"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">Boxed(&quot;Arr [1,5,2,9]&quot;)</td></tr></TABLE>>,tooltip="String-0: primitive-String-0"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    subgraph "outer_cluster_String-1" {
+        subgraph "cluster_String-1" {
+            subgraph  {
+                "primitive-String-1"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">Boxed(&quot;acc&quot;)</td></tr></TABLE>>,tooltip="String-1: primitive-String-1"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    subgraph "outer_cluster_String-2" {
+        subgraph "cluster_String-2" {
+            subgraph  {
+                "primitive-String-2"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">Boxed(&quot;i&quot;)</td></tr></TABLE>>,tooltip="String-2: primitive-String-2"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    subgraph "outer_cluster_String-3" {
+        subgraph "cluster_String-3" {
+            subgraph  {
+                "primitive-String-3"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">Boxed(&quot;z&quot;)</td></tr></TABLE>>,tooltip="String-3: primitive-String-3"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    fillcolor=6
+    subgraph "outer_cluster_i64-4" {
+        subgraph "cluster_i64-4" {
+            subgraph  {
+                "primitive-i64-4"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" style="rounded"><tr><td BALIGN="left" CELLPADDING="4" WIDTH="30" HEIGHT="30">4</td></tr></TABLE>>,tooltip="i64-4: primitive-i64-4"]
+            }
+        }
+        style="invis"
+        cluster=true
+    }
+    margin=0
+}

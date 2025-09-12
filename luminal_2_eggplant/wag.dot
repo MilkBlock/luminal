@@ -1,0 +1,158 @@
+digraph  {
+  compound=true
+  fontname=helvetica
+  fontsize=10
+  margin=2
+  nodesep=0.3
+  ranksep=0.6
+  colorscheme=set312
+  edge[arrowsize=0.8,fontsize=8,fontname=helvetica]
+  graph[style="dashed,rounded,filled"]
+  node[shape=none,style="rounded",margin=0,fontname=helvetica,fontsize=15]
+  subgraph "outer_main" {
+    subgraph "cluster_main" {
+      label=""
+      fillcolor=3
+      subgraph cluster_expr2 {
+        label=""
+        "expr2"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">LIn </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr2\nVersion: \"Latest\""]
+      }
+      fillcolor=4
+      subgraph cluster_math1 {
+        label=""
+        "math1"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MVar z</TD></TR></TABLE>>,tooltip="Type: Math\nSym: math1\nVersion: \"Latest\""]
+      }
+      fillcolor=5
+      subgraph cluster_expr4 {
+        label=""
+        "expr4"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">Max </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr4\nVersion: \"Latest\""]
+      }
+      fillcolor=6
+      subgraph cluster_looptype1 {
+        label=""
+        "looptype1"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">Loop fol math3</TD></TR></TABLE>>,tooltip="Type: LoopType\nSym: looptype1\nVersion: \"Latest\""]
+      }
+      fillcolor=7
+      subgraph cluster_math3 {
+        label=""
+        "math3"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MNum 4</TD></TR></TABLE>>,tooltip="Type: Math\nSym: math3\nVersion: \"Latest\""]
+      }
+      fillcolor=3
+      subgraph cluster_expr3 {
+        label=""
+        "expr3"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">LIn </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr3\nVersion: \"Latest\""]
+      }
+      fillcolor=6
+      subgraph cluster_looptype0 {
+        label=""
+        "looptype0"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">Loop i math0</TD></TR></TABLE>>,tooltip="Type: LoopType\nSym: looptype0\nVersion: \"Latest\""]
+      }
+      fillcolor=10
+      subgraph cluster_expr1 {
+        label=""
+        "expr1"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">GMem acc</TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr1\nVersion: \"Latest\""]
+      }
+      fillcolor=10
+      subgraph cluster_expr0 {
+        label=""
+        "expr0"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">GMem Arr</TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr0\nVersion: \"Latest\""]
+      }
+      fillcolor=7
+      subgraph cluster_math0 {
+        label=""
+        "math0"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MNum 4</TD></TR></TABLE>>,tooltip="Type: Math\nSym: math0\nVersion: \"Latest\""]
+      }
+      fillcolor=1
+      subgraph cluster_math2 {
+        label=""
+        "math2"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MAccum </TD></TR></TABLE>>,tooltip="Type: Math\nSym: math2\nVersion: \"Latest\""]
+      }
+      fillcolor=1
+      subgraph cluster_math4 {
+        label=""
+        "math4"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MAccum </TD></TR></TABLE>>,tooltip="Type: Math\nSym: math4\nVersion: \"Latest\""]
+      }
+      fillcolor=3
+      subgraph cluster_expr5 {
+        label=""
+        "expr5"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">LOut </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr5\nVersion: \"Latest\""]
+      }
+    }
+    style="invis"
+    cluster=true
+  }
+  subgraph "outer_cluster_pulled_from_valueValue(8)" {
+    subgraph "cluster_cluster_pulled_from_valueValue(8)" {
+      label="pulled_from_Some(Value(8))"
+      fillcolor=10
+      subgraph cluster_expr6 {
+        label=""
+        "expr6"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">GMem acc</TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr6\nVersion: \"Latest\""]
+      }
+      fillcolor=4
+      subgraph cluster_math6 {
+        label=""
+        "math6"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MVar z</TD></TR></TABLE>>,tooltip="Type: Math\nSym: math6\nVersion: \"Latest\""]
+      }
+      fillcolor=5
+      subgraph cluster_expr10 {
+        label=""
+        "expr10"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">Max </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr10\nVersion: \"Latest\""]
+      }
+      fillcolor=1
+      subgraph cluster_math5 {
+        label=""
+        "math5"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MAccum </TD></TR></TABLE>>,tooltip="Type: Math\nSym: math5\nVersion: \"Latest\""]
+      }
+      fillcolor=7
+      subgraph cluster_math7 {
+        label=""
+        "math7"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">MNum 4</TD></TR></TABLE>>,tooltip="Type: Math\nSym: math7\nVersion: \"Latest\""]
+      }
+      fillcolor=6
+      subgraph cluster_looptype2 {
+        label=""
+        "looptype2"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">Loop i math7</TD></TR></TABLE>>,tooltip="Type: LoopType\nSym: looptype2\nVersion: \"Latest\""]
+      }
+      fillcolor=3
+      subgraph cluster_expr7 {
+        label=""
+        "expr7"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">LIn </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr7\nVersion: \"Latest\""]
+      }
+      fillcolor=3
+      subgraph cluster_expr9 {
+        label=""
+        "expr9"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">LIn </TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr9\nVersion: \"Latest\""]
+      }
+      fillcolor=10
+      subgraph cluster_expr8 {
+        label=""
+        "expr8"[label=<<TABLE BGCOLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" style="rounded"><TR><TD BALIGN="left" CELLPADDING="2" FONT_SIZE="30">GMem Arr</TD></TR></TABLE>>,tooltip="Type: Expr\nSym: expr8\nVersion: \"Latest\""]
+      }
+    }
+    style="invis"
+    cluster=true
+  }
+  "expr2" -> "expr0" [color=black,style="solid"]
+  "expr2" -> "looptype0" [color=black,style="solid"]
+  "expr2" -> "math1" [color=black,style="solid"]
+  "expr4" -> "expr2" [color=black,style="solid"]
+  "expr4" -> "expr3" [color=black,style="solid"]
+  "looptype1" -> "math3" [color=black,style="solid"]
+  "expr3" -> "expr1" [color=black,style="solid"]
+  "expr3" -> "looptype0" [color=black,style="solid"]
+  "expr3" -> "math2" [color=black,style="solid"]
+  "looptype0" -> "math0" [color=black,style="solid"]
+  "expr10" -> "expr9" [color=black,style="solid"]
+  "expr10" -> "expr7" [color=black,style="solid"]
+  "looptype2" -> "math7" [color=black,style="solid"]
+  "expr7" -> "expr6" [color=black,style="solid"]
+  "expr7" -> "looptype2" [color=black,style="solid"]
+  "expr7" -> "math5" [color=black,style="solid"]
+  "expr9" -> "expr8" [color=black,style="solid"]
+  "expr9" -> "looptype2" [color=black,style="solid"]
+  "expr9" -> "math6" [color=black,style="solid"]
+  "expr5" -> "expr4" [color=black,style="solid"]
+  "expr5" -> "looptype1" [color=black,style="solid"]
+  "expr5" -> "math4" [color=black,style="solid"]
+}
