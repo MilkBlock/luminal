@@ -1,333 +1,564 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-
 use itertools::Itertools;
+
+#[cfg(feature = "cuda")]
+use cudarc::{driver::*, nvrtc::CompileOptions};
+
 use luminal::{
     prelude::{
         NodeIndex,
-        petgraph::{Direction, algo::toposort, prelude::StableGraph, visit::EdgeRef},
+        petgraph::{
+            Direction,
+            algo::toposort,
+            prelude::StableGraph,
+            visit::{EdgeRef, IntoEdgeReferences},
+        },
     },
     shape::Expression,
 };
-use metal_rs::{Buffer, Device, MTLResourceOptions, objc::rc::autoreleasepool};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
+use std::{fs::File, io::Read};
+#[cfg(feature = "metal")]
+use {
+    crate::{Device, Function},
+    objc2_metal::{MTLBuffer, MTLDevice},
+    std::{ffi::c_void, ptr::NonNull},
+};
 
+use crate::Buffer;
+#[cfg(feature = "cuda")]
+use crate::GraphTerm;
 use crate::Kernel;
 
-// // Take inputs and buffer maps and create buffer storage to feed into run_graph
-// pub fn setup_buffers(
-//     inputs: &[(NodeIndex, Vec<f32>)],
-//     gmem_map: &FxHashMap<NodeIndex, usize>,
-//     buffer_map: &FxHashMap<NodeIndex, Vec<usize>>,
-//     buffer_sizes: &Vec<Expression>,
-//     inputs_kernel: NodeIndex,
-//     device: Device,
-// ) -> (Vec<Buffer>, FxHashMap<(NodeIndex, u8), Buffer> {
-//     let mut buffers = FxHashMap::default();
-//     for (input_node, input_data) in inputs {
-//         buffers.insert(
-//             (inputs_kernel, gmem_map[input_node]),
-//             device.new_buffer_with_data(
-//                 input_data.as_ptr() as *mut _,
-//                 (input_data.len() * std::mem::size_of::<f32>()) as u64,
-//                 MTLResourceOptions::StorageModeShared,
-//             ),
-//         );
-//     }
-//     for (buffer_sizes)
+pub fn assign_buffers(
+    graph: &StableGraph<Kernel, (usize, usize)>,
+) -> (Vec<Expression>, FxHashMap<NodeIndex, Vec<usize>>) {
+    // Count consumers only for producer outputs we manage (exclude "Inputs")
+    let mut use_count: FxHashMap<(NodeIndex, usize), usize> = FxHashMap::default();
+    for e in graph.edge_references() {
+        let src = e.source();
+        if graph[src].code != "Inputs" {
+            let (src_out, _) = *e.weight();
+            *use_count.entry((src, src_out)).or_default() += 1;
+        }
+    }
 
-//     todo!()
-// }
+    let mut master = vec![]; // capacities by global buffer index
+    let mut buf_map = FxHashMap::default(); // node -> output_idx -> buffer_idx
+    let mut free_by_cap = FxHashMap::<Expression, Vec<usize>>::default(); // exact-size reuse
 
+    for node in toposort(graph, None).unwrap() {
+        let k = &graph[node];
+        if k.code == "Inputs" {
+            continue; // user-provided; ignore
+        }
+
+        // Allocate exact-size buffers for this node's outputs
+        let mut outs = vec![];
+        for &cap in &k.outputs {
+            let buf_idx = if let Some(idx) = free_by_cap.get_mut(&cap).map(|l| l.pop()).flatten() {
+                // reuse
+                idx
+            } else {
+                // allocate new buffer
+                master.push(cap);
+                master.len() - 1
+            };
+            outs.push(buf_idx);
+        }
+        buf_map.insert(node, outs);
+
+        // Free producer buffers whose last consumer just ran (exclude "Inputs")
+        for e in graph.edges_directed(node, Direction::Incoming) {
+            let src = e.source();
+            if graph[src].code == "Inputs" {
+                continue;
+            }
+            let (src_out_idx, _) = *e.weight();
+            if let Some(c) = use_count.get_mut(&(src, src_out_idx)) {
+                *c -= 1;
+                if *c == 0 {
+                    let buf_idx = buf_map[&src][src_out_idx];
+                    free_by_cap
+                        .entry(master[buf_idx])
+                        .or_default()
+                        .push(buf_idx);
+                }
+            }
+        }
+    }
+
+    (master, buf_map)
+}
+
+#[cfg(feature = "cuda")]
+pub fn compile_kernels(
+    kernels: &StableGraph<Kernel, (usize, usize)>,
+) -> FxHashMap<String, CudaFunction> {
+    let ctx = cudarc::driver::CudaContext::new(0).unwrap();
+    let mut compiled = FxHashMap::default();
+
+    for kernel in kernels.node_weights() {
+        if !compiled.contains_key(&kernel.code)
+            && kernel.code != "Inputs"
+            && kernel.code != "Outputs"
+        {
+            let ptx = cudarc::nvrtc::compile_ptx_with_opts(
+                &kernel.code,
+                CompileOptions {
+                    include_paths: vec!["/usr/include".into()],
+                    options: vec![
+                        "--gpu-architecture=compute_75".into(),
+                        "--relocatable-device-code=false".into(),
+                        "--std=c++14".into(),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let module = ctx.load_module(ptx).unwrap();
+            let k = module.load_function("kernel_name").unwrap();
+            compiled.insert(kernel.code.clone(), k);
+        }
+    }
+    compiled
+}
+
+#[cfg(feature = "metal")]
+pub fn compile_kernels(
+    kernels: &StableGraph<Kernel, (usize, usize)>,
+) -> FxHashMap<String, Function> {
+    use objc2_metal::MTLCreateSystemDefaultDevice;
+
+    let device = MTLCreateSystemDefaultDevice().unwrap();
+    let mut compiled = FxHashMap::default();
+    for kernel in kernels.node_weights() {
+        if !compiled.contains_key(&kernel.code)
+            && kernel.code != "Inputs"
+            && kernel.code != "Outputs"
+        {
+            use objc2_foundation::{NSString, ns_string};
+            use objc2_metal::{MTLDevice, MTLLibrary};
+            let lib = device
+                .newLibraryWithSource_options_error(&NSString::from_str(&kernel.code), None)
+                .unwrap();
+            let f = lib.newFunctionWithName(ns_string!("kernel_name")).unwrap();
+            compiled.insert(kernel.code.clone(), f);
+        }
+    }
+    compiled
+}
+
+#[cfg(feature = "cuda")]
 pub fn run_graph(
-    inputs: &[(NodeIndex, Vec<f32>)],
-    kernels: &StableGraph<Kernel, (u8, u8)>,
+    inputs: &mut FxHashMap<usize, (&CudaSlice<f32>, bool)>,
+    kernels: &StableGraph<Kernel, (usize, usize)>,
     dyn_vars: &FxHashMap<char, usize>,
+    compiled_kernels: &FxHashMap<String, CudaFunction>,
+    intermediate_buffers: &mut Vec<Buffer>,
+    intermediate_buffer_map: &FxHashMap<NodeIndex, Vec<usize>>,
 ) -> (Vec<Vec<f32>>, u128) {
-    use metal_rs::{
-        CompileOptions, ComputePassDescriptor, ComputePipelineDescriptor, Device,
-        MTLResourceOptions, MTLSize,
-    };
-    autoreleasepool(|| {
-        let device = Device::system_default().unwrap();
-        let queue = device.new_command_queue();
-        // let command_buffer = queue.new_command_buffer();
-        // Allocate buffers
-        let mut buffers = vec![];
+    let ctx = cudarc::driver::CudaContext::new(0).unwrap();
+    let stream = ctx.default_stream();
+    let start = std::time::Instant::now();
+
+    let input_node = kernels
+        .node_indices()
+        .find(|n| kernels[*n].code == "Inputs")
+        .unwrap();
+    for (i, node) in toposort(kernels, None).unwrap().into_iter().enumerate() {
+        let kernel = &kernels[node];
+        if kernel.code == "Inputs" {
+            // Inputs should already be in the buffer map
+        } else if kernel.code == "Outputs" {
+            // Run
+            stream.synchronize().unwrap(); // There shouldn't be any other syncs from dispatch till here
+            let outputs = kernels
+                .edges_directed(node, Direction::Incoming)
+                .map(|e| {
+                    (
+                        e.weight().1,
+                        intermediate_buffer_map[&e.source()][e.weight().0],
+                    )
+                })
+                .sorted_by_key(|(_, b)| *b)
+                .rev()
+                .map(|(a, b)| (a, dtoh(&intermediate_buffers[b])))
+                .sorted_by_key(|(a, _)| *a)
+                .map(|(_, a)| a)
+                .collect_vec();
+            return (outputs, start.elapsed().as_micros());
+        } else if kernel.code.starts_with("Diff") {
+            // Load file and diff numbers
+            let diff_name = kernel.code.replace("Diff", "");
+            let (input, input_index) = kernels
+                .edges_directed(node, Direction::Incoming)
+                .sorted_by_key(|n| n.weight().1)
+                .map(|n| (n.source(), n.weight().0))
+                .next()
+                .unwrap();
+            let buffer = &intermediate_buffers[intermediate_buffer_map[&input][input_index]];
+            let data: Vec<f32> = stream.memcpy_dtov(buffer).unwrap();
+            let mut file = File::open(format!("{diff_name}.bin")).unwrap();
+            let mut file_buffer = Vec::new();
+            file.read_to_end(&mut file_buffer).unwrap();
+            assert_eq!(file_buffer.len() % std::mem::size_of::<f32>(), 0);
+
+            let floats: Vec<f32> = file_buffer
+                .chunks_exact(4)
+                .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            let mut matched = true;
+            println!("Diff {} | {}", data.len(), floats.len());
+            for (ind, (i, j)) in data.iter().zip(floats).enumerate() {
+                if (i - j).abs() > 1e-5 {
+                    matched = false;
+                    println!("Diff {diff_name} failed: curr: {i} != file: {j}, index {ind}");
+                    break;
+                }
+            }
+
+            if matched {
+                println!("DIFF {diff_name} MATCHED");
+            }
+            let dest_buffer = &mut intermediate_buffers[intermediate_buffer_map[&node][0]];
+            stream.memcpy_htod(&data, dest_buffer).unwrap();
+        } else {
+            // println!("{i}: {}", kernel.code);
+            let mut builder = stream.launch_builder(&compiled_kernels[&kernel.code]);
+            // set inputs
+            for (input, input_index) in kernels
+                .edges_directed(node, Direction::Incoming)
+                .sorted_by_key(|n| n.weight().1)
+                .map(|n| (n.source(), n.weight().0))
+            {
+                if input == input_node {
+                    // println!("INPUT: {}", inputs[&input_index].0.len());
+                    builder.arg(inputs[&input_index].0);
+                } else {
+                    // println!(
+                    //     "INPUT: {}",
+                    //     intermediate_buffers[intermediate_buffer_map[&input][input_index]].len()
+                    // );
+                    builder
+                        .arg(&intermediate_buffers[intermediate_buffer_map[&input][input_index]]);
+                }
+            }
+            // set output
+            // println!("Grid: {:?}", kernel.grid);
+            // println!("Threadblock: {:?}", kernel.threadblock);
+            // println!("OUTPUTS: {:?}", kernel.outputs);
+            let mut output_views = (0..kernel.outputs.len())
+                .map(|o| intermediate_buffers[intermediate_buffer_map[&node][o]].as_view_mut())
+                .collect_vec();
+            for o in &mut output_views {
+                builder.arg(o);
+            }
+            // set dynamic dimensions
+            for (_, v) in dyn_vars.iter().sorted_by_key(|(k, _)| **k) {
+                builder.arg(v);
+            }
+
+            // Set dispatch
+            let grid = (
+                kernel.grid.0.exec(dyn_vars).unwrap() as u32,
+                kernel.grid.1.exec(dyn_vars).unwrap() as u32,
+                kernel.grid.2.exec(dyn_vars).unwrap() as u32,
+            );
+            let tb = (
+                kernel.threadblock.0.exec(dyn_vars).unwrap() as u32,
+                kernel.threadblock.1.exec(dyn_vars).unwrap() as u32,
+                kernel.threadblock.2.exec(dyn_vars).unwrap() as u32,
+            );
+            assert!(
+                tb.0 * tb.1 * tb.2 <= 1024,
+                "threadblock is too big: {tb:?} > 1024"
+            );
+            assert!(grid.1 <= 65535, "grid.y > 65535");
+            assert!(grid.2 <= 65535, "grid.z > 65535");
+            assert!(grid.0 <= 2147483647, "grid.x > 2147483647");
+            unsafe {
+                builder.launch(LaunchConfig {
+                    grid_dim: grid,
+                    block_dim: tb,
+                    shared_mem_bytes: kernel.smem.exec(dyn_vars).unwrap() as u32,
+                })
+            }
+            .unwrap();
+            // if let Err(e) = stream.synchronize() {
+            //     use crate::codegen::split_kernels_marked_graph;
+
+            //     std::fs::write(
+            //         "graph.txt",
+            //         crate::debug::display_graph_text(&split_kernels_marked_graph(graph), &[]),
+            //     )
+            //     .unwrap();
+            //     panic!("{:?}", e);
+            // }
+        }
+    }
+    panic!("No output kernel detected in graph!");
+}
+
+#[cfg(feature = "metal")]
+pub fn run_graph(
+    inputs: &mut FxHashMap<usize, (&Buffer, bool)>,
+    kernels: &StableGraph<Kernel, (usize, usize)>,
+    dyn_vars: &FxHashMap<char, usize>,
+    compiled_kernels: &FxHashMap<String, Function>,
+    intermediate_buffers: &mut Vec<Buffer>,
+    intermediate_buffer_map: &FxHashMap<NodeIndex, Vec<usize>>,
+) -> (Vec<Vec<f32>>, u128) {
+    objc2::rc::autoreleasepool(|_| {
+        use objc2_metal::{MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice};
+
+        let device = MTLCreateSystemDefaultDevice().unwrap();
+        let queue = device.newCommandQueue().expect("No command queue");
+        let command_buffer = queue.commandBuffer().unwrap();
+        let start = std::time::Instant::now();
+
+        let input_node = kernels
+            .node_indices()
+            .find(|n| kernels[*n].code == "Inputs")
+            .unwrap();
         for node in toposort(kernels, None).unwrap() {
-            let kernel = kernels.node_weight(node).unwrap();
-            if kernel.code.starts_with("Inputs") {
-                let mapping: HashMap<usize, usize> =
-                    serde_json::from_str(&kernel.code.replace("Inputs", "")).unwrap();
-                let buffer_sizes = buffer_sizes
-                    .into_iter()
-                    .copied()
-                    .filter(|s| *s != Expression::from('-'))
-                    .collect_vec();
-                buffers.extend(
-                    inputs
-                        .into_iter()
-                        .sorted_by_key(|(name, _)| mapping[&name.index()])
-                        .map(|(_, buf)| {
-                            device.new_buffer_with_data(
-                                buf.as_ptr() as *mut _,
-                                (buf.len() * std::mem::size_of::<f32>()) as u64,
-                                MTLResourceOptions::StorageModeShared,
-                            )
-                        }),
-                );
-                let intermediates = buffer_sizes
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, size)| {
-                        println!("{i} | {size}");
-                        let v = vec![0.0; size.exec(&dyn_vars).unwrap()];
-                        device.new_buffer_with_data(
-                            v.as_ptr() as *mut _,
-                            (size.exec(&dyn_vars).unwrap() * std::mem::size_of::<f32>()) as u64,
-                            MTLResourceOptions::StorageModeShared,
-                        )
-                    })
-                    .collect_vec();
-                println!(
-                    "buffers {} GB {}",
-                    intermediates.len(),
-                    intermediates.iter().map(|b| b.length()).sum::<u64>() as f32 / 1_000_000_000.0
-                );
-                buffers.extend(intermediates);
-                println!("FINAL: {}", buffers.len());
+            let kernel = &kernels[node];
+            if kernel.code == "Inputs" {
+                // Inputs should already be in the buffer map
             } else if kernel.code == "Outputs" {
                 // Run
-                let start = std::time::Instant::now();
-                // command_buffer.commit();
-                // command_buffer.wait_until_completed();
-                let time_taken_micros = start.elapsed().as_micros();
+                use objc2_metal::MTLCommandBuffer;
+                command_buffer.commit();
+                unsafe {
+                    command_buffer.waitUntilCompleted();
+                }
                 let outputs = kernels
                     .edges_directed(node, Direction::Incoming)
-                    .map(|e| buffer_map[&e.source()][e.weight().0 as usize])
-                    .map(|buffer_index| {
-                        let buffer = &buffers[buffer_index];
-                        let mut curr_data =
-                            vec![0.0; buffer.length() as usize / std::mem::size_of::<f32>()];
-                        let ptr = buffer.contents() as *mut f32;
-                        for (i, d) in curr_data.iter_mut().enumerate() {
-                            *d = unsafe { *ptr.add(i) };
-                        }
-                        curr_data
+                    .map(|e| {
+                        (
+                            e.weight().1,
+                            intermediate_buffer_map[&e.source()][e.weight().0],
+                        )
                     })
-                    .collect();
-                // Copy outputs back
-                return (outputs, time_taken_micros);
-            } else {
-                println!("Grid {:?} TB: {:?}", kernel.grid, kernel.threadblock);
-                println!("{}", kernel.code);
+                    .sorted_by_key(|(_, b)| *b)
+                    .rev()
+                    .map(|(a, b)| (a, dtoh(&intermediate_buffers[b])))
+                    .sorted_by_key(|(a, _)| *a)
+                    .map(|(_, a)| a)
+                    .collect_vec();
+                return (outputs, start.elapsed().as_micros());
+            } else if kernel.code.starts_with("Diff") {
+                // Load file and diff numbers
 
-                // compile kernel
-                let command_buffer = queue.new_command_buffer();
-                let encoder = command_buffer
-                    .compute_command_encoder_with_descriptor(ComputePassDescriptor::new());
-                let options = CompileOptions::new();
-                options.set_fast_math_enabled(true);
-                let lib = device
-                    .new_library_with_source(&kernel.code, &options)
-                    .unwrap();
-                let pipeline_state_descriptor = ComputePipelineDescriptor::new();
-                pipeline_state_descriptor.set_compute_function(Some(
-                    &lib.get_function(&format!("kernel{}", node.index()), None)
-                        .unwrap(),
-                ));
-                let pipeline = device
-                    .new_compute_pipeline_state_with_function(
-                        pipeline_state_descriptor.compute_function().unwrap(),
-                    )
-                    .unwrap();
-                encoder.set_compute_pipeline_state(&pipeline);
-
-                // set inputs
-                for (i, (input, input_index)) in kernels
+                use objc2_metal::MTLBuffer;
+                let diff_name = kernel.code.replace("Diff", "");
+                let (input, input_index) = kernels
                     .edges_directed(node, Direction::Incoming)
                     .sorted_by_key(|n| n.weight().1)
                     .map(|n| (n.source(), n.weight().0))
-                    .enumerate()
+                    .next()
+                    .unwrap();
+                let buffer = &intermediate_buffers[intermediate_buffer_map[&input][input_index]];
+                let mut data = vec![0_f32; buffer.length() as usize / size_of::<f32>()];
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        buffer.contents().as_ptr() as *const f32,
+                        data.as_mut_ptr(),
+                        data.len(),
+                    );
+                }
+                let mut file = File::open(format!("{diff_name}.bin")).unwrap();
+                let mut file_buffer = Vec::new();
+                file.read_to_end(&mut file_buffer).unwrap();
+                assert_eq!(file_buffer.len() % std::mem::size_of::<f32>(), 0);
+
+                let _num_floats = file_buffer.len() / std::mem::size_of::<f32>();
+                let floats: Vec<f32> = file_buffer
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect();
+                let mut matched = true;
+                println!("Diff {} | {}", data.len(), floats.len());
+                for (ind, (i, j)) in data.iter().zip(floats).enumerate() {
+                    if (i - j).abs() > 1e-5 {
+                        matched = false;
+                        println!("Diff {diff_name} failed: curr: {i} != file: {j}, index {ind}");
+                        break;
+                    }
+                }
+
+                if matched {
+                    println!("DIFF {diff_name} MATCHED");
+                }
+                let dest_buffer = &mut intermediate_buffers[intermediate_buffer_map[&node][0]];
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        data.as_ptr(),
+                        dest_buffer.contents().as_ptr() as *mut f32,
+                        data.len(),
+                    );
+                }
+            } else {
+                use objc2_metal::{
+                    MTLCommandBuffer, MTLCommandEncoder, MTLComputeCommandEncoder, MTLSize,
+                };
+                let encoder = command_buffer.computeCommandEncoder().unwrap();
+                let Ok(c) = device
+                    .newComputePipelineStateWithFunction_error(&compiled_kernels[&kernel.code])
+                else {
+                    panic!("failed to compile {}", kernel.code);
+                };
+                encoder.setComputePipelineState(&c);
+
+                // set inputs
+                let mut buffer_count = 0;
+
+                for (input, input_index) in kernels
+                    .edges_directed(node, Direction::Incoming)
+                    .sorted_by_key(|n| n.weight().1)
+                    .map(|n| (n.source(), n.weight().0))
                 {
-                    println!(
-                        "Inp {i}: {}",
-                        buffers[buffer_map[&input][input_index as usize]].length()
-                    );
-                    encoder.set_buffer(
-                        i as u64,
-                        Some(&buffers[buffer_map[&input][input_index as usize]]),
-                        0,
-                    );
+                    if input == input_node {
+                        unsafe {
+                            encoder.setBuffer_offset_atIndex(
+                                Some(&inputs[&input_index].0),
+                                0,
+                                buffer_count,
+                            );
+                        }
+                    } else {
+                        unsafe {
+                            encoder.setBuffer_offset_atIndex(
+                                Some(
+                                    &intermediate_buffers
+                                        [intermediate_buffer_map[&input][input_index]],
+                                ),
+                                0,
+                                buffer_count,
+                            );
+                        }
+                    }
+                    buffer_count += 1;
                 }
                 // set output
-                let n_inputs = kernels.edges_directed(node, Direction::Incoming).count();
-                for (i, output) in buffer_map[&node].iter().enumerate() {
-                    encoder.set_buffer((i + n_inputs) as u64, Some(&buffers[*output]), 0);
+                for o in 0..kernel.outputs.len() {
+                    unsafe {
+                        encoder.setBuffer_offset_atIndex(
+                            Some(&intermediate_buffers[intermediate_buffer_map[&node][o]]),
+                            0,
+                            buffer_count,
+                        );
+                    }
+                    buffer_count += 1;
                 }
-                // set smem
-                if !kernel.smem.is_empty() {
-                    encoder.set_threadgroup_memory_length(
-                        0,
-                        (kernel.smem.exec(dyn_vars).unwrap() * std::mem::size_of::<f32>()) as u64,
-                    );
+                // set dynamic dimensions
+                for (_, v) in dyn_vars.iter().sorted_by_key(|(k, _)| **k) {
+                    let val: u64 = *v as u64;
+                    let buf = unsafe {
+                        use std::{ffi::c_void, ptr::NonNull};
+
+                        use objc2_metal::MTLResourceOptions;
+
+                        device
+                            .newBufferWithBytes_length_options(
+                                NonNull::new(&val as *const _ as *mut c_void).unwrap(),
+                                std::mem::size_of::<u64>(),
+                                MTLResourceOptions::StorageModeShared,
+                            )
+                            .unwrap()
+                    };
+                    unsafe { encoder.setBuffer_offset_atIndex(Some(&buf), 0, buffer_count) };
+                    buffer_count += 1;
                 }
 
                 // Set dispatch
-                encoder.dispatch_thread_groups(
-                    MTLSize::new(
-                        kernel.grid.0.exec(dyn_vars).unwrap() as u64,
-                        kernel.grid.1.exec(dyn_vars).unwrap() as u64,
-                        kernel.grid.2.exec(dyn_vars).unwrap() as u64,
-                    ),
-                    MTLSize::new(
-                        kernel.threadblock.0.exec(dyn_vars).unwrap() as u64,
-                        kernel.threadblock.1.exec(dyn_vars).unwrap() as u64,
-                        kernel.threadblock.2.exec(dyn_vars).unwrap() as u64,
-                    ),
+                let grid = (
+                    kernel.grid.0.exec(dyn_vars).unwrap(),
+                    kernel.grid.1.exec(dyn_vars).unwrap(),
+                    kernel.grid.2.exec(dyn_vars).unwrap(),
                 );
-                encoder.end_encoding();
-                command_buffer.commit();
-                command_buffer.wait_until_completed();
-                for (i, (input, input_index)) in kernels
-                    .edges_directed(node, Direction::Incoming)
-                    .sorted_by_key(|n| n.weight().1)
-                    .map(|n| (n.source(), n.weight().0))
-                    .enumerate()
-                {
-                    let mut curr_data = vec![
-                        0.0;
-                        buffers[buffer_map[&input][input_index as usize]].length()
-                            as usize
-                            / std::mem::size_of::<f32>()
-                    ];
-                    let ptr =
-                        buffers[buffer_map[&input][input_index as usize]].contents() as *mut f32;
-                    // if curr_data.is_empty() {
-                    //     panic!(
-                    //         "input empty: {} | {}",
-                    //         buffer_sizes[buffer_map[&input][input_index as usize]],
-                    //         buffers[buffer_map[&input][input_index as usize]].length()
-                    //     );
-                    // }
-                    for (i, d) in curr_data.iter_mut().enumerate() {
-                        *d = unsafe { *ptr.add(i) };
-                    }
-                    println!("{:?}", &curr_data[..10.min(curr_data.len())]);
-                }
-                println!("---");
-                for (i, output) in buffer_map[&node].iter().enumerate() {
-                    let mut curr_data =
-                        vec![0.0; buffers[*output].length() as usize / std::mem::size_of::<f32>()];
-                    let ptr = buffers[*output].contents() as *mut f32;
-                    for (i, d) in curr_data.iter_mut().enumerate() {
-                        *d = unsafe { *ptr.add(i) };
-                    }
-                    println!("{:?}", &curr_data[..10.min(curr_data.len())]);
-                    for (i, n) in curr_data.into_iter().enumerate() {
-                        if n.is_nan() || n.is_infinite() {
-                            panic!("{} | {}", n, i);
-                        }
-                    }
-                }
+                let tb = (
+                    kernel.threadblock.0.exec(dyn_vars).unwrap(),
+                    kernel.threadblock.1.exec(dyn_vars).unwrap(),
+                    kernel.threadblock.2.exec(dyn_vars).unwrap(),
+                );
+                assert!(
+                    tb.0 * tb.1 * tb.2 <= 1024,
+                    "threadblock is too big: {tb:?} > 1024"
+                );
+                assert!(grid.1 <= 65535, "grid.y > 65535");
+                assert!(grid.2 <= 65535, "grid.z > 65535");
+                assert!(grid.0 <= 2147483647, "grid.x > 2147483647");
+                encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                    MTLSize {
+                        width: grid.0,
+                        height: grid.1,
+                        depth: grid.2,
+                    },
+                    MTLSize {
+                        width: tb.0,
+                        height: tb.1,
+                        depth: tb.2,
+                    },
+                );
+                encoder.endEncoding();
             }
         }
         panic!("No output kernel detected in graph!");
     })
 }
 
-// Analyze memory buffers and produce a mapping from node -> Vec<buffer index> and a list of buffers to allocate ahead of time
-pub fn produce_buffer_map(
-    graph: &StableGraph<Kernel, (u8, u8)>,
-) -> (Vec<Expression>, FxHashMap<NodeIndex, Vec<usize>>) {
-    // First pass - get clear sets for each node
-    #[allow(clippy::type_complexity)]
-    let mut first_pass: FxHashMap<
-        NodeIndex,
-        (
-            BTreeMap<NodeIndex, BTreeSet<NodeIndex>>,
-            BTreeSet<NodeIndex>,
-        ),
-    > = FxHashMap::default();
-    let toposort = toposort(&graph, None).unwrap();
-    // Loop through nodes in graph
-    for node in &toposort {
-        // Run through parents to build new tenative set and clear set
-        let (mut tenative_sets, mut clear_set) = (BTreeMap::default(), BTreeSet::default());
-        for parent in graph.neighbors_directed(*node, Direction::Incoming) {
-            let parent_children = graph
-                .neighbors_directed(parent, Direction::Outgoing)
-                .collect::<BTreeSet<_>>();
-            tenative_sets.insert(parent, parent_children);
-            if let Some((parent_tenative_set, parent_clear_set)) = first_pass.get(&parent) {
-                for (node_index, new_tenative_set) in parent_tenative_set.iter().map(|(n, c)| {
-                    let mut c = c.clone();
-                    c.retain(|n| *n != parent);
-                    (*n, c)
-                }) {
-                    if let Some(set) = tenative_sets.get(&node_index) {
-                        *tenative_sets.get_mut(&node_index).unwrap() =
-                            btreeset_intersection(new_tenative_set, set);
-                    } else {
-                        tenative_sets.insert(node_index, new_tenative_set);
-                    }
-                }
-                clear_set.extend(
-                    tenative_sets
-                        .iter()
-                        .filter(|(_, v)| v.is_empty())
-                        .map(|(n, _)| *n),
-                );
-                tenative_sets.retain(|_, v| !v.is_empty());
-                clear_set.extend(parent_clear_set);
-            }
-        }
-        first_pass.insert(*node, (tenative_sets, clear_set));
-    }
+#[cfg(feature = "cuda")]
+pub fn htod(v: &[f32], ctx: &std::sync::Arc<CudaContext>) -> CudaSlice<f32> {
+    assert!(!v.is_empty(), "Can't copy empty slice to device");
 
-    // Second pass - assign buffers
-    let available_buffers = graph
-        .node_indices()
-        .map(|n| (n, graph.node_weight(n).unwrap().outputs.clone()))
-        .collect::<FxHashMap<_, _>>();
-    // Loop through nodes in graph
-    let mut buffers = vec![];
-    let mut buffer_map = FxHashMap::default();
-    let mut used = FxHashSet::<NodeIndex>::default();
-    for node in &toposort {
-        buffer_map.insert(*node, vec![]);
-        // Assign output buffers
-        for required_buffer in &graph.node_weight(*node).unwrap().outputs {
-            // println!("required :{}", required_buffer);
-            // Find an applicable buffer
-            if let Some((buffer_index, source_node, _)) = first_pass[node]
-                .1
-                .iter()
-                .filter(|i| !used.contains(i))
-                .filter(|i| available_buffers.contains_key(i))
-                .flat_map(|i| {
-                    available_buffers[i]
-                        .iter()
-                        .enumerate()
-                        .map(|(o, b)| (o, *i, b))
-                })
-                .find(|(_, _, size)| **size == *required_buffer)
-            {
-                let buffer = buffer_map.get(&source_node).unwrap()[buffer_index];
-                buffer_map.get_mut(node).unwrap().push(buffer);
-                // Remove this buffer from first_pass so it can't be used again
-                used.insert(source_node);
-            } else {
-                // Allocate new buffer
-                buffer_map.get_mut(node).unwrap().push(buffers.len());
-                buffers.push(*required_buffer);
-            }
-        }
-    }
-
-    (buffers, buffer_map)
+    // Then copy host data to the allocated device memory
+    let stream = ctx.default_stream();
+    let mut dst = stream.alloc_zeros::<f32>(v.len()).unwrap();
+    stream.memcpy_htod(v, &mut dst).unwrap();
+    dst
 }
 
-fn btreeset_intersection<T: Ord>(mut a: BTreeSet<T>, b: &BTreeSet<T>) -> BTreeSet<T> {
-    a.retain(|i| b.contains(i));
-    a
+/// Device -> Host (like contents() memcpy back)
+#[cfg(feature = "cuda")]
+pub fn dtoh(buf: &CudaSlice<f32>) -> Vec<f32> {
+    buf.stream().memcpy_dtov(buf).unwrap()
+}
+
+#[cfg(feature = "metal")]
+pub fn htod(v: &Vec<f32>, device: &Device) -> Buffer {
+    assert!(v.len() > 0);
+    unsafe {
+        let ptr = NonNull::new(v.as_ptr() as *mut c_void).unwrap();
+        device
+            .newBufferWithBytes_length_options(
+                ptr,
+                (v.len() * 4) as _,
+                objc2_metal::MTLResourceOptions::StorageModeShared,
+            )
+            .unwrap()
+    }
+}
+#[cfg(feature = "metal")]
+pub fn dtoh(v: &Buffer) -> Vec<f32> {
+    let mut data = vec![0f32; v.length() as usize / size_of::<f32>()];
+    let ptr = v.contents().as_ptr() as *mut f32;
+    for (i, d) in data.iter_mut().enumerate() {
+        *d = unsafe { *ptr.add(i) };
+    }
+    data
+}
+
+#[cfg(feature = "metal")]
+pub fn new_buffer(size: usize) -> Buffer {
+    objc2_metal::MTLCreateSystemDefaultDevice()
+        .unwrap()
+        .newBufferWithLength_options(size, objc2_metal::MTLResourceOptions::StorageModeShared)
+        .unwrap()
+}
+
+#[cfg(feature = "cuda")]
+pub fn new_buffer(size: usize) -> Buffer {
+    let ctx = cudarc::driver::CudaContext::new(0).unwrap();
+    let stream = ctx.default_stream();
+    stream.alloc_zeros::<f32>(size / size_of::<f32>()).unwrap()
 }

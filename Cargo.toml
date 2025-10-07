@@ -45,5 +45,5 @@ exclude = [
     "crates/luminal_cuda",
     "crates/luminal_metal",
     "crates/luminal_2",
-    "flash_attention_demo",
+    "demos/flash_attention",
 ]
